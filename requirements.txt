@@ -1,0 +1,18 @@
+streamlit>=1.28.0
+streamlit-option-menu>=0.3.6
+pandas>=2.0.0
+python-dotenv>=1.0.0
+pathlib2>=2.3.7
+pillow>=10.0.0
+
+# FAISS 및 벡터 검색
+faiss-cpu>=1.7.4
+sentence-transformers>=2.2.2
+numpy>=1.24.0
+
+# 문서 처리
+PyPDF2>=3.0.1
+pdfplumber>=0.9.0
+python-docx>=0.8.11
+python-pptx>=0.6.21
+openpyxl>=3.1.0
