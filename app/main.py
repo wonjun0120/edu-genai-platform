@@ -19,11 +19,11 @@ from pages.settings import show_settings_page
 from pages.courses import show_instructor_courses, show_student_courses
 from pages.ai_search import show_ai_search_page
 from pages.document_upload import show_document_upload
-from pages.classroom import show_classroom
+
 
 # 페이지 설정
 st.set_page_config(
-    page_title="DX·AI 교육 플랫폼",
+    page_title="DX·AI 교육 플랫폼 beta",
     page_icon="🎓",
     layout="wide"
 )
@@ -91,8 +91,6 @@ def show_student_dashboard():
         show_student_home()
     elif selected == "📚 내 강의":
         show_student_courses()
-    elif selected == "🏛️ 강의실":
-        show_classroom()
     elif selected == "📝 학습노트":
         show_notes_page()
     elif selected == "🎨 AI도구":
@@ -110,8 +108,6 @@ def show_instructor_dashboard():
         show_instructor_home()
     elif selected == "📚 강의 관리":
         show_instructor_courses()
-    elif selected == "🏛️ 강의실":
-        show_classroom()
     elif selected == "📊 수업분석":
         show_analytics_page()
 

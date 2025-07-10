@@ -251,6 +251,44 @@ pip-selfcheck.json
 ### Data ###
 content/
 
+### Database Files ###
+# SQLite database files
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Database specific files
+app/database/*.db
+app/database/*.sqlite*
+
+# Vector database files
+app/vector/data/
+*.faiss
+*.pkl
+*.index
+
+# Uploaded files
+app/uploads/
+uploads/
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Cache files
+*.cache
+cache/
+__pycache__/
+
 # Created by https://www.toptal.com/developers/gitignore/api/node
 # Edit at https://www.toptal.com/developers/gitignore?templates=node
 

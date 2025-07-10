@@ -5,8 +5,8 @@ def get_student_menu():
     """학습자 메뉴 반환"""
     return option_menu(
         menu_title=None,
-        options=["🏠 홈", "📚 내 강의", "🏛️ 강의실", "📝 학습노트", "🎨 AI도구"],
-        icons=["house", "book", "building", "journal-text", "palette"],
+        options=["🏠 홈", "📚 내 강의", "📝 학습노트", "🎨 AI도구"],
+        icons=["house", "book", "journal-text", "palette"],
         menu_icon="cast",
         default_index=0,
         orientation="horizontal",
@@ -16,8 +16,8 @@ def get_instructor_menu():
     """교수자 메뉴 반환"""
     return option_menu(
         menu_title=None,
-        options=["🏠 홈", "📚 강의 관리", "🏛️ 강의실", "📊 수업분석"],
-        icons=["house", "book", "building", "bar-chart", "gear"],
+        options=["🏠 홈", "📚 강의 관리", "📊 수업분석"],
+        icons=["house", "book", "bar-chart"],
         menu_icon="cast",
         default_index=0,
         orientation="horizontal",

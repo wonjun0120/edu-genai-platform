@@ -222,6 +222,23 @@ class DatabaseManager:
         conn.close()
         return courses
     
+    def get_inactive_courses_by_instructor(self, instructor_id: str) -> List[Dict]:
+        """교수자의 비활성화된 강의 목록 조회"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT c.*, u.name as instructor_name
+            FROM courses c
+            JOIN users u ON c.instructor_id = u.id
+            WHERE c.instructor_id = ? AND c.is_active = 0
+            ORDER BY c.created_at DESC
+        ''', (instructor_id,))
+        
+        courses = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return courses
+    
     def get_active_courses(self) -> List[Dict]:
         """활성화된 강의 목록 조회"""
         conn = self.get_connection()
@@ -238,6 +255,81 @@ class DatabaseManager:
         courses = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return courses
+    
+    def update_course_status(self, course_id: str, is_active: bool) -> bool:
+        """강의 상태 업데이트"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                UPDATE courses 
+                SET is_active = ?
+                WHERE id = ?
+            ''', (is_active, course_id))
+            
+            conn.commit()
+            conn.close()
+            return True
+        except Exception:
+            conn.close()
+            return False
+    
+    def update_course_info(self, course_id: str, **kwargs) -> bool:
+        """강의 정보 업데이트"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # 업데이트 가능한 필드들
+            allowed_fields = [
+                'name', 'description', 'semester', 'credit', 'max_students', 
+                'department', 'is_active'
+            ]
+            
+            # 업데이트할 필드와 값 추출
+            update_fields = []
+            update_values = []
+            
+            for field, value in kwargs.items():
+                if field in allowed_fields and value is not None:
+                    update_fields.append(f"{field} = ?")
+                    update_values.append(value)
+            
+            if not update_fields:
+                return False
+            
+            # 쿼리 생성
+            query = f"UPDATE courses SET {', '.join(update_fields)} WHERE id = ?"
+            update_values.append(course_id)
+            
+            cursor.execute(query, update_values)
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"강의 정보 업데이트 오류: {str(e)}")
+            return False
+    
+    def get_course_by_id(self, course_id: str) -> Optional[Dict]:
+        """강의 ID로 강의 정보 조회"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT c.*, u.name as instructor_name
+            FROM courses c
+            JOIN users u ON c.instructor_id = u.id
+            WHERE c.id = ?
+        ''', (course_id,))
+        
+        course = cursor.fetchone()
+        conn.close()
+        
+        return dict(course) if course else None
     
     # 수강신청 관리
     def enroll_student(self, student_id: str, course_id: str) -> bool:
@@ -318,9 +410,10 @@ class DatabaseManager:
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT d.*, u.name as uploader_name
+            SELECT d.*, 
+                   COALESCE(u.name, d.uploaded_by) as uploader_name
             FROM documents d
-            JOIN users u ON d.uploaded_by = u.id
+            LEFT JOIN users u ON d.uploaded_by = u.id
             WHERE d.course_id = ?
             ORDER BY d.uploaded_at DESC
         ''', (course_id,))
@@ -356,6 +449,27 @@ class DatabaseManager:
         
         conn.commit()
         conn.close()
+    
+    def delete_document(self, doc_id: str) -> bool:
+        """문서 삭제"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # 먼저 관련 청크들 삭제
+            cursor.execute('DELETE FROM document_chunks WHERE document_id = ?', (doc_id,))
+            
+            # 문서 삭제
+            cursor.execute('DELETE FROM documents WHERE id = ?', (doc_id,))
+            
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"문서 삭제 중 오류: {str(e)}")
+            return False
     
     # 벡터 인덱스 관리
     def create_vector_index(self, course_id: str, index_path: str, embedding_model: str, dimension: int) -> str:

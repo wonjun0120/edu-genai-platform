@@ -11,6 +11,7 @@ sys.path.insert(0, str(current_dir))
 
 from database.models import DatabaseManager
 from utils.session_utils import get_user_name, get_user_role
+from pages.classroom import show_classroom_dashboard
 
 def init_course_data():
     """강의 데이터 초기화"""
@@ -25,42 +26,32 @@ def show_instructor_courses():
     """교수자 강의 관리 페이지"""
     init_course_data()
     
-    st.markdown("### 📚 강의 관리")
-    
-    # 탭으로 구분
-    tab1, tab2 = st.tabs(["강의 개설", "내 강의"])
-    
-    with tab1:
-        show_create_course_form()
+    # 강의실 모드인지 확인
+    if 'current_course' in st.session_state:
+        # 강의실 모드 - 강의실 화면 표시
+        show_classroom_dashboard()
+    else:
+        # 강의 관리 모드 - 기본 강의 관리 화면
+        st.markdown("### 📚 강의 관리")
         
-        # 새로 생성된 강의가 있으면 바로가기 버튼 표시
-        if 'new_course_created' in st.session_state:
-            course_info = st.session_state.new_course_created
+        # 탭으로 구분
+        tab1, tab2, tab3 = st.tabs(["내 강의", "비활성화 강의", "강의 개설"])
+        
+        with tab1:
+            show_instructor_course_list()
+        
+        with tab2:
+            show_inactive_course_list()
+                    
+        with tab3:
+            show_create_course_form()
             
-            st.markdown("---")
-            st.markdown("### 🎉 강의 개설 완료!")
-            
-            # col1, col2 = st.columns(2)
-            # with col1:
-            #     if st.button("🏛️ 바로 강의실 입장하기", type="primary", key="direct_enter_classroom"):
-            #         st.session_state.current_course = {
-            #             'id': course_info['course_id'],
-            #             'data': course_info['course_data'],
-            #             'entered_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            #         }
-            #         # 플래그 제거
-            #         del st.session_state.new_course_created
-            #         st.success(f"🎉 '{course_info['course_name']}' 강의실로 이동합니다!")
-            #         st.rerun()
-            
-            # with col2:
-            #     if st.button("📚 강의 목록으로 이동", type="secondary", key="goto_course_list"):
-            #         # 플래그 제거하고 강의 목록 탭으로 이동
-            #         del st.session_state.new_course_created
-            #         st.rerun()
-    
-    with tab2:
-        show_instructor_course_list()
+            # 새로 생성된 강의가 있으면 바로가기 버튼 표시
+            if 'new_course_created' in st.session_state:
+                course_info = st.session_state.new_course_created
+                
+                st.markdown("---")
+                st.markdown("### 🎉 강의 개설 완료!")
 
 def show_create_course_form():
     """강의 개설 폼"""
@@ -242,8 +233,26 @@ def show_instructor_course_list():
                 
                 if st.button(f"강의 {'비활성화' if course.get('is_active', 1) else '활성화'}", 
                            key=f"toggle_{course_id}"):
-                    # TODO: 데이터베이스에서 강의 상태 업데이트 구현 필요
-                    st.info("강의 상태 변경 기능은 곧 구현될 예정입니다.")
+                    # 강의 상태 업데이트
+                    current_status = course.get('is_active', 1)
+                    new_status = not current_status
+                    
+                    if db_manager.update_course_status(course_id, new_status):
+                        # 세션 상태도 업데이트
+                        if course_id in st.session_state.courses:
+                            st.session_state.courses[course_id]['is_active'] = new_status
+                        
+                        # 성공 메시지 표시
+                        status_text = "활성화" if new_status else "비활성화"
+                        st.success(f"✅ '{course['name']}' 강의가 {status_text}되었습니다!")
+                        
+                        # 비활성화 시 경고 메시지
+                        if not new_status:
+                            st.warning("⚠️ 강의가 비활성화되었습니다. 학생들이 수강신청을 할 수 없습니다.")
+                        
+                        st.rerun()
+                    else:
+                        st.error("❌ 강의 상태 변경 중 오류가 발생했습니다.")
             
             if course.get('description'):
                 st.write(f"**설명:** {course['description']}")
@@ -253,6 +262,97 @@ def show_instructor_course_list():
                 st.write("**수강생 목록:**")
                 for student in enrolled_students:
                     st.write(f"- {student['name']} (수강신청일: {student['enrolled_at']})")
+
+def show_inactive_course_list():
+    """교수자의 비활성화된 강의 목록"""
+    st.markdown("#### 비활성화된 강의 목록")
+    
+    # 데이터베이스 매니저 초기화
+    if 'db_manager' not in st.session_state:
+        st.session_state.db_manager = DatabaseManager()
+    
+    db_manager = st.session_state.db_manager
+    user_name = get_user_name()
+    
+    # 교수자 정보 조회
+    instructor = db_manager.get_user_by_name_role(user_name, "instructor")
+    
+    if not instructor:
+        st.info("교수자 정보를 찾을 수 없습니다.")
+        return
+    
+    # 데이터베이스에서 비활성화된 강의 목록 조회
+    inactive_courses = db_manager.get_inactive_courses_by_instructor(instructor['id'])
+    
+    if not inactive_courses:
+        st.info("🎉 비활성화된 강의가 없습니다!")
+        st.markdown("모든 강의가 활성화 상태입니다.")
+        return
+    
+    st.warning("⚠️ 비활성화된 강의는 학생들이 수강신청할 수 없습니다.")
+    st.markdown("---")
+    
+    for course in inactive_courses:
+        course_id = course['id']
+        
+        with st.expander(f"🔒 {course['name']} ({course['code']}) - {course['semester']} [비활성화]"):
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.write(f"**학점:** {course['credit']}학점")
+                st.write(f"**학과:** {course.get('department', 'N/A')}")
+                st.write(f"**개설일:** {course['created_at']}")
+                st.write(f"**상태:** ❌ 비활성화")
+            
+            with col2:
+                # 데이터베이스에서 수강생 수와 자료 수 조회
+                enrolled_students = db_manager.get_course_enrollments(course_id)
+                enrolled_count = len(enrolled_students)
+                st.write(f"**수강인원:** {enrolled_count}/{course['max_students']}명")
+                
+                documents = db_manager.get_course_documents(course_id)
+                materials_count = len(documents)
+                st.write(f"**업로드 자료:** {materials_count}개")
+                
+                # 비활성화 날짜 표시 (실제로는 수정 시간을 표시)
+                st.write(f"**비활성화 일시:** {course.get('created_at', 'N/A')}")
+            
+            with col3:
+                st.write("### 🔄 강의 재활성화")
+                st.write("이 강의를 다시 활성화하시겠습니까?")
+                
+                if st.button(f"✅ 강의 활성화", key=f"activate_{course_id}", type="primary"):
+                    # 강의 활성화 로직
+                    if db_manager.update_course_status(course_id, True):
+                        # 세션 상태도 업데이트
+                        if course_id in st.session_state.courses:
+                            st.session_state.courses[course_id]['is_active'] = True
+                        
+                        st.success(f"🎉 '{course['name']}' 강의가 성공적으로 활성화되었습니다!")
+                        st.info("💡 학생들이 이제 이 강의를 수강신청할 수 있습니다.")
+                        st.rerun()
+                    else:
+                        st.error("❌ 강의 활성화 중 오류가 발생했습니다.")
+                
+                # 완전 삭제 버튼 (신중하게 사용)
+                with st.expander("🗑️ 위험한 작업", expanded=False):
+                    st.warning("⚠️ 주의: 이 작업은 되돌릴 수 없습니다!")
+                    if st.button(f"🗑️ 강의 완전 삭제", key=f"delete_{course_id}", type="secondary"):
+                        st.error("강의 삭제 기능은 아직 구현되지 않았습니다.")
+                        st.info("데이터 보호를 위해 현재는 비활성화만 가능합니다.")
+            
+            if course.get('description'):
+                st.markdown("**강의 설명:**")
+                st.write(course['description'])
+            
+            # 수강생 목록 (비활성화된 강의도 기존 수강생 정보는 유지)
+            if enrolled_students:
+                st.markdown("**📝 기존 수강생 목록:**")
+                for student in enrolled_students:
+                    st.write(f"- {student['name']} (수강신청일: {student['enrolled_at']})")
+                st.caption("💡 강의를 재활성화하면 기존 수강생들도 다시 접근할 수 있습니다.")
+            
+            st.markdown("---")
 
 def show_course_materials_management():
     """강의자료 관리"""
@@ -335,28 +435,39 @@ def show_student_courses():
     """학생 강의 목록 및 참여"""
     init_course_data()
     
-    st.markdown("### 📚 강의 참여")
-    
-    tab1, tab2 = st.tabs(["수강신청", "내 강의"])
-    
-    with tab1:
-        show_course_enrollment()
-    
-    with tab2:
-        show_enrolled_courses()
+    # 강의실 모드인지 확인
+    if 'current_course' in st.session_state:
+        # 강의실 모드 - 강의실 화면 표시
+        show_classroom_dashboard()
+    else:
+        # 강의 관리 모드 - 기본 강의 관리 화면
+        st.markdown("### 📚 강의 참여")
+        
+        tab1, tab2 = st.tabs(["수강신청", "내 강의"])
+        
+        with tab1:
+            show_course_enrollment()
+        
+        with tab2:
+            show_enrolled_courses()
 
 def show_course_enrollment():
     """수강신청 페이지"""
     st.markdown("#### 수강신청")
     
-    # 활성화된 강의만 표시
-    active_courses = {k: v for k, v in st.session_state.courses.items() if v['is_active']}
+    # 데이터베이스에서 활성화된 강의만 조회
+    if 'db_manager' not in st.session_state:
+        st.session_state.db_manager = DatabaseManager()
+    
+    db_manager = st.session_state.db_manager
+    active_courses = db_manager.get_active_courses()
     
     if not active_courses:
         st.info("현재 수강신청 가능한 강의가 없습니다.")
         return
     
-    for course_id, course in active_courses.items():
+    for course in active_courses:
+        course_id = course['id']
         enrolled_count = len(st.session_state.course_enrollments.get(course_id, []))
         is_enrolled = any(student['name'] == st.session_state.user_name 
                          for student in st.session_state.course_enrollments.get(course_id, []))
@@ -366,9 +477,10 @@ def show_course_enrollment():
             
             with col1:
                 st.markdown(f"**📖 {course['name']} ({course['code']})**")
-                st.write(f"교수자: {course['instructor']} | 학점: {course['credit']} | 학기: {course['semester']}")
+                instructor_name = course.get('instructor_name', 'N/A')
+                st.write(f"교수자: {instructor_name} | 학점: {course['credit']} | 학기: {course['semester']}")
                 st.write(f"수강인원: {enrolled_count}/{course['max_students']}명")
-                st.write(f"설명: {course['description']}")
+                st.write(f"설명: {course.get('description', '설명 없음')}")
             
             with col2:
                 if is_enrolled:
@@ -409,10 +521,23 @@ def show_enrolled_courses():
     
     for course_id, course in my_courses:
         with st.expander(f"📖 {course['name']} ({course['code']})"):
-            st.write(f"**교수자:** {course['instructor']}")
-            st.write(f"**학점:** {course['credit']}학점")
-            st.write(f"**학기:** {course['semester']}")
-            st.write(f"**설명:** {course['description']}")
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                st.write(f"**교수자:** {course['instructor']}")
+                st.write(f"**학점:** {course['credit']}학점")
+                st.write(f"**학기:** {course['semester']}")
+                st.write(f"**설명:** {course['description']}")
+            
+            with col2:
+                if st.button(f"🏛️ 강의실 입장", key=f"enter_student_classroom_{course_id}", type="primary"):
+                    st.session_state.current_course = {
+                        'id': course_id,
+                        'data': course,
+                        'entered_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    st.success(f"🎉 '{course['name']}' 강의실에 입장했습니다!")
+                    st.rerun()
             
             # 강의자료 표시
             st.markdown("##### 📚 강의자료")

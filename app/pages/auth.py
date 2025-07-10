@@ -3,14 +3,26 @@ from utils.session_utils import set_user_role, set_user_name
 
 def show_role_selection():
     """역할 선택 페이지"""
-    st.markdown("""
+    st.markdown("""                
     <div style="text-align: center; padding: 2rem 0;">
-        <h1>🎓 DX·AI 교육 플랫폼</h1>
-        <p style="font-size: 1.2rem; color: #666;">생성형 AI를 활용한 교수학습 솔루션</p>
+    <h1>
+        🎓 DX·AI 교육 플랫폼
+        <span style="
+        font-size: 0.55em;   /* 제목보다 작게 */
+        color: #666;         /* 회색 */
+        font-style: italic;  /* 기울임 */
+        margin-left: .35rem; /* 약간의 간격 */
+        vertical-align: super; /* 살짝 위로 올려서 뱃지 느낌 */
+        ">
+        beta
+        </span>
+    </h1>
+
+    <p style="font-size: 1.2rem; color: #666;">생성형 AI를 활용한 교수학습 솔루션</p>
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown("### 👋 환영합니다! 사용자 유형을 선택해주세요.")
+    st.markdown("### 👋 환영합니다! 사용자 이름을 입력하고, 유형을 선택해주세요.")
     
     # 사용자 이름 입력
     user_name = st.text_input("이름을 입력해주세요", placeholder="예: 홍길동")
