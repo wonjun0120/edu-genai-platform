@@ -359,8 +359,9 @@ def show_course_materials_management():
     st.markdown("#### 강의자료 관리")
     
     # 강의 선택
+    user_name = get_user_name()
     instructor_courses = {k: v for k, v in st.session_state.courses.items() 
-                         if v['instructor'] == st.session_state.user_name}
+                         if v['instructor'] == user_name}
     
     if not instructor_courses:
         st.info("먼저 강의를 개설해주세요.")
@@ -395,7 +396,7 @@ def show_course_materials_management():
                         'size': uploaded_file.size,
                         'type': uploaded_file.type,
                         'uploaded_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        'uploader': st.session_state.user_name
+                        'uploader': get_user_name()
                     }
                     
                     if course_id not in st.session_state.course_materials:
@@ -443,13 +444,13 @@ def show_student_courses():
         # 강의 관리 모드 - 기본 강의 관리 화면
         st.markdown("### 📚 강의 참여")
         
-        tab1, tab2 = st.tabs(["수강신청", "내 강의"])
+        tab1, tab2 = st.tabs(["내 강의", "수강신청"])
         
         with tab1:
-            show_course_enrollment()
+            show_enrolled_courses()
         
         with tab2:
-            show_enrolled_courses()
+            show_course_enrollment()
 
 def show_course_enrollment():
     """수강신청 페이지"""
@@ -466,11 +467,19 @@ def show_course_enrollment():
         st.info("현재 수강신청 가능한 강의가 없습니다.")
         return
     
+    # 현재 사용자 정보 조회
+    user_name = get_user_name()
+    current_student = db_manager.get_user_by_name_role(user_name, "student")
+    
     for course in active_courses:
         course_id = course['id']
-        enrolled_count = len(st.session_state.course_enrollments.get(course_id, []))
-        is_enrolled = any(student['name'] == st.session_state.user_name 
-                         for student in st.session_state.course_enrollments.get(course_id, []))
+        enrolled_count = len(db_manager.get_course_enrollments(course_id))
+        
+        # 현재 사용자가 수강신청했는지 확인
+        is_enrolled = False
+        if current_student:
+            student_courses = db_manager.get_student_courses(current_student['id'])
+            is_enrolled = any(sc['id'] == course_id for sc in student_courses)
         
         with st.container():
             col1, col2 = st.columns([3, 1])
@@ -490,17 +499,38 @@ def show_course_enrollment():
                 else:
                     if st.button("수강신청", key=f"enroll_{course_id}"):
                         # 수강신청 처리
-                        enrollment_info = {
-                            'name': st.session_state.user_name,
-                            'enrollment_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        }
+                        user_name = get_user_name()
                         
-                        if course_id not in st.session_state.course_enrollments:
-                            st.session_state.course_enrollments[course_id] = []
+                        # 학생 정보 조회 또는 생성
+                        student = db_manager.get_user_by_name_role(user_name, "student")
+                        if not student:
+                            # 학생이 없으면 생성
+                            student_id = db_manager.create_user(user_name, "student")
+                        else:
+                            student_id = student['id']
                         
-                        st.session_state.course_enrollments[course_id].append(enrollment_info)
-                        st.success(f"✅ '{course['name']}' 강의에 수강신청되었습니다!")
-                        st.rerun()
+                        try:
+                            # 데이터베이스에 수강신청 저장
+                            success = db_manager.enroll_student(student_id, course_id)
+                            
+                            if success:
+                                # 세션 상태에도 저장 (하위 호환성을 위해)
+                                enrollment_info = {
+                                    'name': user_name,
+                                    'enrollment_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                }
+                                
+                                if course_id not in st.session_state.course_enrollments:
+                                    st.session_state.course_enrollments[course_id] = []
+                                
+                                st.session_state.course_enrollments[course_id].append(enrollment_info)
+                                st.success(f"✅ '{course['name']}' 강의에 수강신청되었습니다!")
+                                st.rerun()
+                            else:
+                                st.error("❌ 수강신청 중 오류가 발생했습니다.")
+                                
+                        except Exception as e:
+                            st.error(f"❌ 수강신청 중 오류가 발생했습니다: {str(e)}")
             
             st.divider()
 
@@ -508,53 +538,55 @@ def show_enrolled_courses():
     """수강중인 강의 목록"""
     st.markdown("#### 수강중인 강의")
     
-    # 내가 수강중인 강의 찾기
-    my_courses = []
-    for course_id, enrollments in st.session_state.course_enrollments.items():
-        if any(student['name'] == st.session_state.user_name for student in enrollments):
-            course_info = st.session_state.courses[course_id]
-            my_courses.append((course_id, course_info))
+    # 데이터베이스 매니저 초기화
+    if 'db_manager' not in st.session_state:
+        st.session_state.db_manager = DatabaseManager()
     
-    if not my_courses:
+    db_manager = st.session_state.db_manager
+    user_name = get_user_name()
+    
+    # 현재 사용자의 수강중인 강의 조회
+    student = db_manager.get_user_by_name_role(user_name, "student")
+    
+    if not student:
+        st.info("학생 정보를 찾을 수 없습니다. 수강신청을 먼저 해보세요!")
+        return
+    
+    # 데이터베이스에서 수강중인 강의 목록 조회
+    enrolled_courses = db_manager.get_student_courses(student['id'])
+    
+    if not enrolled_courses:
         st.info("수강중인 강의가 없습니다. 수강신청을 해보세요!")
         return
     
-    for course_id, course in my_courses:
-        with st.expander(f"📖 {course['name']} ({course['code']})"):
+    # 각 강의 정보 표시
+    for course in enrolled_courses:
+        course_id = course['id']
+        
+        # 세션 상태에서 강의 정보 조회 (안전하게 접근)
+        course_info = st.session_state.courses.get(course_id)
+        
+        # 세션 상태에 없으면 데이터베이스에서 조회한 정보 사용
+        if not course_info:
+            course_info = course
+        
+        with st.expander(f"📖 {course_info['name']} ({course_info['code']})"):
             col1, col2 = st.columns([3, 1])
             
             with col1:
-                st.write(f"**교수자:** {course['instructor']}")
-                st.write(f"**학점:** {course['credit']}학점")
-                st.write(f"**학기:** {course['semester']}")
-                st.write(f"**설명:** {course['description']}")
+                instructor_name = course_info.get('instructor_name', course_info.get('instructor', 'N/A'))
+                st.write(f"**교수자:** {instructor_name}")
+                st.write(f"**학점:** {course_info['credit']}학점")
+                st.write(f"**학기:** {course_info['semester']}")
+                st.write(f"**설명:** {course_info.get('description', '설명 없음')}")
             
             with col2:
                 if st.button(f"🏛️ 강의실 입장", key=f"enter_student_classroom_{course_id}", type="primary"):
                     st.session_state.current_course = {
                         'id': course_id,
-                        'data': course,
+                        'data': course_info,
                         'entered_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
-                    st.success(f"🎉 '{course['name']}' 강의실에 입장했습니다!")
+                    st.success(f"🎉 '{course_info['name']}' 강의실에 입장했습니다!")
                     st.rerun()
             
-            # 강의자료 표시
-            st.markdown("##### 📚 강의자료")
-            materials = st.session_state.course_materials.get(course_id, [])
-            
-            if materials:
-                for material in materials:
-                    col1, col2 = st.columns([3, 1])
-                    
-                    with col1:
-                        st.write(f"📄 {material['name']}")
-                        st.caption(f"업로드: {material['uploaded_at']}")
-                    
-                    with col2:
-                        file_size_kb = material['size'] / 1024
-                        st.caption(f"{file_size_kb:.1f} KB")
-                        st.button("다운로드", key=f"download_{material['id']}", 
-                                disabled=True, help="다운로드 기능은 추후 구현 예정")
-            else:
-                st.info("아직 업로드된 강의자료가 없습니다.") 
