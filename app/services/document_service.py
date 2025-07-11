@@ -229,6 +229,20 @@ class DocumentService:
         except Exception as e:
             logger.error(f"벡터 인덱스 정보 업데이트 중 오류: {str(e)}")
     
+    def get_documents_for_course(self, course_id: str) -> List[Dict]:
+        """
+        특정 강의의 모든 문서 목록을 가져옵니다.
+        Args:
+            course_id: 강의 ID
+        Returns:
+            문서 정보 딕셔너리 리스트
+        """
+        try:
+            return self.db_manager.get_course_documents(course_id)
+        except Exception as e:
+            logger.error(f"강의 문서 목록 조회 중 오류: {e}")
+            return []
+
     def search_course_documents(self, course_id: str, query: str, user_id: str, 
                                top_k: int = 5, search_type: str = "vector") -> Dict:
         """

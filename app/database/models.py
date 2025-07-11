@@ -138,12 +138,42 @@ class DatabaseManager:
             )
         ''')
         
+        # 채팅방 테이블
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chat_rooms (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                course_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active BOOLEAN DEFAULT 1,
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                FOREIGN KEY (course_id) REFERENCES courses (id)
+            )
+        ''')
+        
+        # 채팅 메시지 테이블
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id TEXT PRIMARY KEY,
+                room_id TEXT NOT NULL,
+                role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                token_count INTEGER DEFAULT 0,
+                FOREIGN KEY (room_id) REFERENCES chat_rooms (id)
+            )
+        ''')
+        
         # 인덱스 생성
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_enrollments_student ON enrollments(student_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_enrollments_course ON enrollments(course_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_documents_course ON documents(course_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_document_chunks_document ON document_chunks(document_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_search_history_user ON search_history(user_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_rooms_user ON chat_rooms(user_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_room ON chat_messages(room_id)')
         
         conn.commit()
         conn.close()
@@ -575,4 +605,167 @@ class DatabaseManager:
         
         history = [dict(row) for row in cursor.fetchall()]
         conn.close()
-        return history 
+        return history
+    
+    # 채팅 관리
+    def create_chat_room(self, user_id: str, course_id: str, title: str) -> str:
+        """채팅방 생성"""
+        room_id = str(uuid.uuid4())
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO chat_rooms (id, user_id, course_id, title)
+            VALUES (?, ?, ?, ?)
+        ''', (room_id, user_id, course_id, title))
+        
+        conn.commit()
+        conn.close()
+        return room_id
+    
+    def get_user_chat_rooms(self, user_id: str, course_id: str = None) -> List[Dict]:
+        """사용자 채팅방 목록 조회"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        if course_id:
+            cursor.execute('''
+                SELECT cr.*, c.name as course_name
+                FROM chat_rooms cr
+                LEFT JOIN courses c ON cr.course_id = c.id
+                WHERE cr.user_id = ? AND cr.course_id = ? AND cr.is_active = 1
+                ORDER BY cr.updated_at DESC
+            ''', (user_id, course_id))
+        else:
+            cursor.execute('''
+                SELECT cr.*, c.name as course_name
+                FROM chat_rooms cr
+                LEFT JOIN courses c ON cr.course_id = c.id
+                WHERE cr.user_id = ? AND cr.is_active = 1
+                ORDER BY cr.updated_at DESC
+            ''', (user_id,))
+        
+        result = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return result
+    
+    def get_chat_room(self, room_id: str) -> Optional[Dict]:
+        """채팅방 조회"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT cr.*, c.name as course_name, u.name as user_name
+            FROM chat_rooms cr
+            LEFT JOIN courses c ON cr.course_id = c.id
+            LEFT JOIN users u ON cr.user_id = u.id
+            WHERE cr.id = ?
+        ''', (room_id,))
+        
+        room = cursor.fetchone()
+        conn.close()
+        
+        return dict(room) if room else None
+    
+    def update_chat_room(self, room_id: str, title: str = None, is_active: bool = None):
+        """채팅방 업데이트"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        updates = []
+        params = []
+        
+        if title is not None:
+            updates.append("title = ?")
+            params.append(title)
+        
+        if is_active is not None:
+            updates.append("is_active = ?")
+            params.append(is_active)
+        
+        if updates:
+            updates.append("updated_at = ?")
+            params.append(datetime.now())
+            params.append(room_id)
+            
+            cursor.execute(f'''
+                UPDATE chat_rooms 
+                SET {", ".join(updates)}
+                WHERE id = ?
+            ''', params)
+        
+        conn.commit()
+        conn.close()
+    
+    def create_chat_message(self, room_id: str, role: str, content: str, token_count: int = 0) -> str:
+        """채팅 메시지 생성"""
+        message_id = str(uuid.uuid4())
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO chat_messages (id, room_id, role, content, token_count)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (message_id, room_id, role, content, token_count))
+        
+        # 채팅방 업데이트 시간 갱신
+        cursor.execute('''
+            UPDATE chat_rooms 
+            SET updated_at = ?
+            WHERE id = ?
+        ''', (datetime.now(), room_id))
+        
+        conn.commit()
+        conn.close()
+        return message_id
+    
+    def get_chat_messages(self, room_id: str, limit: int = 50) -> List[Dict]:
+        """채팅 메시지 조회"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM chat_messages 
+            WHERE room_id = ? 
+            ORDER BY created_at ASC
+            LIMIT ?
+        ''', (room_id, limit))
+        
+        result = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return result
+    
+    def get_chat_context(self, room_id: str, limit: int = 10) -> List[Dict]:
+        """채팅 컨텍스트 조회 (최근 메시지들)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM chat_messages 
+            WHERE room_id = ? 
+            ORDER BY created_at DESC
+            LIMIT ?
+        ''', (room_id, limit))
+        
+        result = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return result[::-1]  # 오래된 순서대로 반환
+    
+    def delete_chat_room(self, room_id: str) -> bool:
+        """채팅방 삭제"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # 채팅 메시지 삭제
+            cursor.execute('DELETE FROM chat_messages WHERE room_id = ?', (room_id,))
+            # 채팅방 삭제
+            cursor.execute('DELETE FROM chat_rooms WHERE id = ?', (room_id,))
+            
+            conn.commit()
+            return True
+        except Exception as e:
+            conn.rollback()
+            return False
+        finally:
+            conn.close()

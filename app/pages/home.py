@@ -8,7 +8,7 @@ from datetime import datetime
 current_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(current_dir))
 
-from utils.session_utils import get_user_name, get_user_role
+from utils.session_utils import get_user_name, get_user_role, set_selected_course_id
 from services.document_service import DocumentService
 from database.models import DatabaseManager
 
@@ -71,19 +71,79 @@ def show_student_home():
             df_courses = pd.DataFrame(courses_data)
             st.dataframe(df_courses, use_container_width=True)
             
-            # 강의실 바로가기
-            st.markdown("#### 🏛️ 강의실 바로가기")
-            cols = st.columns(min(len(courses_data), 3))
-            for i, course in enumerate(student_courses):
-                with cols[i % 3]:
-                    if st.button(f"📖 {course['name']}", key=f"goto_course_{i}"):
-                        # 강의실 입장 로직
-                        st.session_state.current_course = {
-                            'id': course['id'],
-                            'data': course,
-                            'entered_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        }
-                        st.success(f"🎉 '{course['name']}' 강의실로 이동합니다!")
+            # 강의 선택 섹션
+            st.markdown("#### 🎯 강의 선택")
+            st.info("💡 강의를 선택하면 AI 채팅에서 해당 강의 자료를 기반으로 학습 도움을 받을 수 있습니다!")
+            
+            # 강의 선택 드롭다운
+            course_options = [f"{course['name']} ({course['code']})" for course in student_courses]
+            selected_course_idx = st.selectbox(
+                "학습할 강의를 선택하세요:",
+                options=range(len(course_options)),
+                format_func=lambda x: course_options[x],
+                key="course_selector"
+            )
+            
+            # 강의 선택 버튼
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                if st.button("✅ 강의 선택", type="primary", use_container_width=True):
+                    selected_course = student_courses[selected_course_idx]
+                    
+                    # 선택된 강의 ID를 세션에 저장
+                    set_selected_course_id(selected_course['id'])
+                    
+                    # 강의 정보를 세션에 저장
+                    st.session_state.current_course = {
+                        'id': selected_course['id'],
+                        'data': selected_course,
+                        'selected_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    
+                    st.success(f"🎉 '{selected_course['name']}' 강의가 선택되었습니다!")
+                    st.success("💬 이제 AI 채팅에서 이 강의에 대한 질문을 할 수 있습니다!")
+                    st.rerun()
+            
+            with col2:
+                if st.button("📊 강의 상세 정보", use_container_width=True):
+                    selected_course = student_courses[selected_course_idx]
+                    materials_count = len(db_manager.get_course_documents(selected_course['id']))
+                    
+                    with st.expander(f"📋 {selected_course['name']} 상세 정보", expanded=True):
+                        col_info1, col_info2 = st.columns(2)
+                        
+                        with col_info1:
+                            st.write(f"**강의명:** {selected_course['name']}")
+                            st.write(f"**강의코드:** {selected_course['code']}")
+                            st.write(f"**담당교수:** {selected_course['instructor_name']}")
+                            st.write(f"**학기:** {selected_course['semester']}")
+                        
+                        with col_info2:
+                            st.write(f"**학점:** {selected_course['credit']}학점")
+                            st.write(f"**학과:** {selected_course['department'] or '미지정'}")
+                            st.write(f"**강의자료:** {materials_count}개")
+                            st.write(f"**수강신청일:** {selected_course['enrolled_at']}")
+                        
+                        if selected_course['description']:
+                            st.write(f"**강의 설명:** {selected_course['description']}")
+            
+            # 현재 선택된 강의 표시
+            if st.session_state.get('current_course'):
+                current_course = st.session_state.current_course
+                st.markdown("---")
+                st.markdown("#### 📌 현재 선택된 강의")
+                st.info(f"🎯 **{current_course['data']['name']}** ({current_course['data']['code']}) - {current_course.get('selected_at', '선택 시간 불명')}")
+                
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    if st.button("💬 AI 채팅 시작", use_container_width=True):
+                        st.switch_page("app/pages/chat.py")
+                
+                with col2:
+                    if st.button("🗑️ 강의 선택 해제", use_container_width=True):
+                        del st.session_state.current_course
+                        set_selected_course_id(None)
+                        st.success("강의 선택이 해제되었습니다.")
                         st.rerun()
     else:
         st.info("👋 아직 수강 중인 강의가 없습니다. '📚 내 강의'에서 강의를 신청해보세요!")

@@ -200,6 +200,7 @@ class AISearchEngine:
                         'similarity': result['similarity'],
                         'chunk_index': result['chunk_index'],
                         'text_preview': result['text'],
+                        'content': result['text'],  # 채팅 서비스에서 사용할 content 필드 추가
                         'search_type': 'vector'
                     })
             
@@ -244,6 +245,7 @@ class AISearchEngine:
                         'uploader': doc['uploader_name'],
                         'keyword_count': keyword_count,
                         'text_preview': preview_text,
+                        'content': preview_text,  # 채팅 서비스에서 사용할 content 필드 추가
                         'search_type': 'keyword'
                     })
             
@@ -296,6 +298,9 @@ class AISearchEngine:
                         'hybrid_score': keyword_score,
                         'search_type': 'hybrid'
                     }
+                    # content 필드가 없는 경우 text_preview로 대체
+                    if 'content' not in combined_results[doc_id]:
+                        combined_results[doc_id]['content'] = result.get('text_preview', '')
             
             # 하이브리드 점수순으로 정렬
             sorted_results = sorted(

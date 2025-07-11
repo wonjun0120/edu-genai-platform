@@ -10,8 +10,8 @@ current_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(current_dir))
 
 from database.models import DatabaseManager
-from utils.session_utils import get_user_name, get_user_role
-from pages.classroom import show_classroom_dashboard
+from utils.session_utils import get_user_name, get_user_role, set_selected_course_id
+from pages.classroom import show_classroom_page
 
 def init_course_data():
     """강의 데이터 초기화"""
@@ -29,7 +29,7 @@ def show_instructor_courses():
     # 강의실 모드인지 확인
     if 'current_course' in st.session_state:
         # 강의실 모드 - 강의실 화면 표시
-        show_classroom_dashboard()
+        show_classroom_page()
     else:
         # 강의 관리 모드 - 기본 강의 관리 화면
         st.markdown("### 📚 강의 관리")
@@ -433,18 +433,15 @@ def show_course_materials_management():
             st.info("아직 업로드된 강의자료가 없습니다.")
 
 def show_student_courses():
-    """학생 강의 목록 및 참여"""
+    """학생 강의 관리 페이지"""
     init_course_data()
     
     # 강의실 모드인지 확인
-    if 'current_course' in st.session_state:
-        # 강의실 모드 - 강의실 화면 표시
-        show_classroom_dashboard()
+    if 'current_course' in st.session_state and st.session_state.current_course:
+        show_classroom_page()
     else:
-        # 강의 관리 모드 - 기본 강의 관리 화면
-        st.markdown("### 📚 강의 참여")
-        
-        tab1, tab2 = st.tabs(["내 강의", "수강신청"])
+        st.markdown("### 📚 내 강의")
+        tab1, tab2 = st.tabs(["수강 중인 강의", "수강 신청"])
         
         with tab1:
             show_enrolled_courses()
@@ -535,58 +532,60 @@ def show_course_enrollment():
             st.divider()
 
 def show_enrolled_courses():
-    """수강중인 강의 목록"""
-    st.markdown("#### 수강중인 강의")
+    """수강 중인 강의 목록"""
+    st.markdown("#### 📖 수강 중인 강의")
     
-    # 데이터베이스 매니저 초기화
-    if 'db_manager' not in st.session_state:
-        st.session_state.db_manager = DatabaseManager()
+    db_manager = DatabaseManager()
+    user = db_manager.get_user_by_name_role(get_user_name(), "student")
     
-    db_manager = st.session_state.db_manager
-    user_name = get_user_name()
-    
-    # 현재 사용자의 수강중인 강의 조회
-    student = db_manager.get_user_by_name_role(user_name, "student")
-    
-    if not student:
-        st.info("학생 정보를 찾을 수 없습니다. 수강신청을 먼저 해보세요!")
+    if not user:
+        st.warning("사용자 정보를 찾을 수 없습니다.")
         return
+        
+    student_courses = db_manager.get_student_courses(user['id'])
     
-    # 데이터베이스에서 수강중인 강의 목록 조회
-    enrolled_courses = db_manager.get_student_courses(student['id'])
-    
-    if not enrolled_courses:
-        st.info("수강중인 강의가 없습니다. 수강신청을 해보세요!")
+    if not student_courses:
+        st.info("수강 중인 강의가 없습니다. '수강 신청' 탭에서 강의를 찾아보세요.")
         return
+        
+    courses_data = []
+    for course in student_courses:
+        materials_count = len(db_manager.get_course_documents(course['id']))
+        courses_data.append({
+            '강의명': course['name'],
+            '담당교수': course['instructor_name'],
+            '학기': course['semester'],
+            '강의자료': f"{materials_count}개",
+            'id': course['id'],
+            'data': course
+        })
+
+    df_courses = pd.DataFrame(courses_data)
     
-    # 각 강의 정보 표시
-    for course in enrolled_courses:
-        course_id = course['id']
+    if 'enter_classroom' not in st.session_state:
+        st.session_state.enter_classroom = -1
+
+    for i, row in df_courses.iterrows():
+        st.markdown(f"### {row['강의명']}")
+        st.markdown(f"**담당교수:** {row['담당교수']} | **학기:** {row['학기']} | **강의자료:** {row['강의자료']}")
         
-        # 세션 상태에서 강의 정보 조회 (안전하게 접근)
-        course_info = st.session_state.courses.get(course_id)
+        if st.button("🏛️ 강의실 입장", key=f"enter_{row['id']}"):
+            set_selected_course_id(row['id'])
+            st.session_state.current_course = {
+                'id': row['id'],
+                'data': row['data'],
+                'entered_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            st.rerun()
+        st.markdown("---")
         
-        # 세션 상태에 없으면 데이터베이스에서 조회한 정보 사용
-        if not course_info:
-            course_info = course
-        
-        with st.expander(f"📖 {course_info['name']} ({course_info['code']})"):
-            col1, col2 = st.columns([3, 1])
-            
-            with col1:
-                instructor_name = course_info.get('instructor_name', course_info.get('instructor', 'N/A'))
-                st.write(f"**교수자:** {instructor_name}")
-                st.write(f"**학점:** {course_info['credit']}학점")
-                st.write(f"**학기:** {course_info['semester']}")
-                st.write(f"**설명:** {course_info.get('description', '설명 없음')}")
-            
-            with col2:
-                if st.button(f"🏛️ 강의실 입장", key=f"enter_student_classroom_{course_id}", type="primary"):
-                    st.session_state.current_course = {
-                        'id': course_id,
-                        'data': course_info,
-                        'entered_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }
-                    st.success(f"🎉 '{course_info['name']}' 강의실에 입장했습니다!")
-                    st.rerun()
+    if st.session_state.enter_classroom != -1:
+        selected_course = courses_data[st.session_state.enter_classroom]
+        set_selected_course_id(selected_course['id'])
+        st.session_state.current_course = {
+            'id': selected_course['id'],
+            'data': selected_course['data'],
+            'entered_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        st.rerun()
             

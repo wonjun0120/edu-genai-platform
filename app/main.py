@@ -93,8 +93,6 @@ def show_student_dashboard():
         show_student_courses()
     elif selected == "📝 학습노트":
         show_notes_page()
-    elif selected == "🎨 AI도구":
-        show_ai_tools()
 
 # 교수자 대시보드
 def show_instructor_dashboard():
@@ -135,11 +133,6 @@ def show_notes_page():
     """학습 노트 페이지"""
     st.markdown("### 📝 학습 노트")
     st.info("학습 노트 기능은 Phase 2에서 구현 예정입니다.")
-
-def show_ai_tools():
-    """AI 도구 페이지"""
-    st.markdown("### 🎨 AI 도구")
-    st.info("AI 도구 기능은 Phase 2에서 구현 예정입니다.")
 
 def show_system_status():
     """시스템 상태 페이지"""
